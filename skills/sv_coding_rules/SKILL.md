@@ -1,22 +1,22 @@
 ---
-name: FPGA Module House Rules
+name: sv_coding_rules
 description: >-
   Use this when splitting FPGA modules or writing/reviewing/refactoring
-  synthesizable RTL after architecture is chosen. Apply the user's house rules:
-  three-process FSM; single-FSM names must be cs_state/ns_state (never bare
-  cs_/ns_, never state_q/st/w_ns_/state_ff); multi-FSM names
-  cs_<machine>/ns_<machine>; always_ff updates only the cs_* of that machine,
-  always_comb only its ns_*; no shadow next-state; explicit if/else if arcs;
-  i_/o_/w_/r_/s_/m_ names; SPEC comments; instance pulse vs handshake;
-  o_dbg_cs_state keep ports; vendor IP for async FIFO/RAM/switch. Use on
-  模块划分、编码、重构、状态机、三段式、cs_state、命名、注释、IP核. Do not use during open-ended
-  architecture exploration, XDC/timing closure, UVM, or board bring-up.
+  synthesizable SystemVerilog RTL after architecture is chosen
+  (sv_coding_rules). Defaults: sys_clk, sys_rst_n, asynchronous active-low
+  reset. Three-process FSM with cs_state/ns_state (never bare cs_/ns_).
+  Multi-FSM: cs_<machine>/ns_<machine>. Explicit if/else if arcs,
+  i_/o_/w_/r_/s_/m_ names, SPEC comments, o_dbg_cs_state keep ports, vendor IP
+  for async FIFO/RAM/switch. Use on
+  模块划分、编码、重构、状态机、三段式、cs_state、sys_clk、sys_rst_n、异步复位、命名、注释、IP核. Do not use
+  during open-ended architecture exploration, XDC/timing closure, UVM, or board
+  bring-up.
 ---
-# FPGA 模块编码约束
+# sv_coding_rules
 
-在**架构已经选定之后**，做模块拆分、写 RTL、审 RTL、按家规改代码时用本 skill。架构阶段不要用本 skill 去卡层次模板或八件套交付。
+在**架构已经选定之后**，做模块拆分、写 SystemVerilog DUT、审 RTL、按家规改代码时用本 skill。架构阶段不要用本 skill 去卡层次模板或八件套交付。
 
-编码风格细枝（`always_ff` 语法对错等）可与 [FPGA RTL Style](sand-workflow:fpga-rtl-style) 对照；**与本文件冲突时以本文件为准**（这是用户家规）。尤其 FSM 信号名：禁止用 RTL Style 的 `state_ff` / `state_ns`，必须用下面的 `cs_state` / `ns_state`（或多机带机名）。
+编码风格细枝可与 [FPGA RTL Style](sand-workflow:fpga-rtl-style) 对照；**与本文件冲突时以本文件为准**。尤其 FSM 信号名：禁止 `state_ff` / `state_ns`，必须用 `cs_state` / `ns_state`（或多机带机名）。
 
 ## 铁律
 
@@ -26,6 +26,7 @@ description: >-
 4. 不假绿：监控口不能被综合吃掉；不靠 `false_path` 代替同步器。
 5. 有状态机就必须 **三段式**：第一段只改 `cs_*`，第二段只改 `ns_*`，其余全在第三段。禁止影子次态、禁止第二段夹带 sticky/计数/数据。
 6. FSM 信号必须带完整名字：单机 `cs_state` / `ns_state`；多机 `cs_<机名>` / `ns_<机名>`。禁止光秃秃的 `cs_` / `ns_`，禁止 `state_q` / `st` / `w_ns_` / `state_ff` / `state_ns`。
+7. **时钟/复位默认：** 时钟端口 `sys_clk`，复位端口 `sys_rst_n`，**异步低电平复位**。时序块写成 `always_ff @(posedge sys_clk or negedge sys_rst_n)`，复位分支 `if (!sys_rst_n)`。不要默认 `clk` / `rst_n`，不要默认同步复位。
 
 ## 不要约束架构
 
@@ -52,18 +53,18 @@ description: >-
 
 ### 第一段 — 时序，只更新当前态
 
-一个 `always_ff`，**除该机的 `cs_*` 外不准写任何别的信号**。
+一个 `always_ff`，**除该机的 `cs_*` 外不准写任何别的信号**。默认异步低有效：
 
 ```systemverilog
-always_ff @(posedge clk) begin
-    if (!rst_n)
+always_ff @(posedge sys_clk or negedge sys_rst_n) begin
+    if (!sys_rst_n)
         cs_state <= ST_IDLE;
     else
         cs_state <= ns_state;
 end
 ```
 
-（复位极性跟模块约定；本段仍然只能出现该机的 `cs_*`。）
+本段仍然只能出现该机的 `cs_*`。
 
 ### 第二段 — 组合，只更新次态
 
@@ -83,6 +84,7 @@ end
 
 - 用 `cs_state`（或已算好的 `ns_state`；多机用对应名字）做分支，不要另造 `st`。
 - sticky / 非法态检测写在这里。
+- 第三段里每个 `always_ff` 同样默认 `@(posedge sys_clk or negedge sys_rst_n)`，`if (!sys_rst_n)`。
 
 ## 3. always 分组（第三段 + 无 FSM 的模块）
 
@@ -90,14 +92,16 @@ end
 - 逻辑相似、同一套复位/使能语义的信号放同一块。
 - 差别大的拆开。
 - **绝对禁止**同一信号在多个块中赋值。当前态与次态是两个信号；第一段和第二段各写各的，不算违规。
-- 拆块后每块同步复位必须一致；同一级流水使能必须一致。
+- 拆块后每块复位必须一致（默认都是异步低有效 `sys_rst_n`）；同一级流水使能必须一致。
 - 第一、二段的「只准一个目标信号」优先于本条的「相似信号可以同块」——不要把 sticky 塞进第一或第二段凑分组。
 
 ## 4. 命名
 
 | 对象 | 前缀 / 全名 | 说明 |
 |------|-------------|------|
-| 模块输入 | `i_` | |
+| 默认时钟 | `sys_clk` | 不要默认 `clk` |
+| 默认复位 | `sys_rst_n` | 异步、低有效；不要默认 `rst_n` 或同步复位 |
+| 模块输入 | `i_` | `sys_clk` / `sys_rst_n` 用专用名，不加 `i_` |
 | 模块输出 | `o_` | |
 | 组合网 | `w_` | 表示本拍组合，不是 Verilog `wire` 关键字 |
 | 时序寄存 | `r_` | 家规未另指定寄存前缀时的默认，与 `w_` 必须可区分 |
@@ -109,12 +113,14 @@ end
 
 信号**集中声明**，用分块注释标明这一组的大致功能。
 
+端口顺序：`sys_clk`、`sys_rst_n` 永远是前两个。
+
 ## 5. 注释
 
 - 每个过程块上方写**功能目标**，不要把代码翻译成中文。
 - 有文档约束时必须可追溯，格式：`// SPEC: <doc-id> §x.y` 或需求/issue 号。无文档写 `// SPEC: none`。只追约束（拍数、协议、复位），不抄整章 SRS。
 - 例化上方一行说明该实例干什么。
-- 例化的每个接口旁标注形态：`握手` 或 `脉冲`（脉冲须注明相对哪路时钟、是否单拍）。需要时加 `电平` / `sticky`。只标模块边界，不给每根内部 `w_` 标。
+- 例化的每个接口旁标注形态：`握手` 或 `脉冲`（脉冲须注明相对哪路时钟、是否单拍）。需要时加 `电平` / `sticky`。`sys_clk` / `sys_rst_n` 标 `时钟` / `复位(异步低)`。只标模块边界。
 
 ## 6. 监控口
 
@@ -132,7 +138,7 @@ end
 
 - 一个模块一个时钟域做运算；跨时钟只实例化第 7 节的桥/IP。
 - 流接口默认握手；脉冲必须在边界标清，且置位优先于同拍清除（必达事件）。
-- 数据通路同步复位；不在运算模块里散落第二套时钟。
+- 默认异步低有效复位，释放后由本域时序采样。跨域复位仍要每域同步释放（可在 `_top` 用复位同步器 IP/封装），不要把第二套运算钟散进业务模块。
 
 ---
 
@@ -140,7 +146,7 @@ end
 
 1. 只选**一段**（一个模块或一条清晰数据路径），不要整仓格式化。
 2. 先列违规对照表（哪条家规、现在怎么写、改成什么）。
-3. 有 FSM 的先改成三段式：第一段只当前态，第二段只次态；单机改名为 `cs_state` / `ns_state`（多机带机名）；再拆第三段；然后其余命名、监控口、例化注释与形态；该换 IP 的只换本节范围内的 FIFO/RAM/switch。
+3. 有 FSM 的先改成三段式：第一段只当前态，第二段只次态；单机改名为 `cs_state` / `ns_state`（多机带机名）；时钟复位改成 `sys_clk` / `sys_rst_n` 异步低有效；再拆第三段。
 4. 删掉影子状态（`st`、`state_q`、`cs_`/`ns_` 光秃名、`state_ff`）。
 5. 不改架构分层，除非当前文件把两个时钟域的运算写在同一模块里（编码违规，允许把桥拎出去）。
 6. 交付：对照表 + 改后关键片段 + 未改项（例如上层仍不接 `o_dbg_*`）。
@@ -151,8 +157,9 @@ end
 - 第一段写了当前态以外的信号；第二段写了次态以外的信号（含 `w_illegal`、计数、数据）
 - FSM 用光秃 `cs_` / `ns_`，或 `state_q` / `st` / `w_ns_` / `state_ff` / `state_ns`
 - 存在与 `cs_state`（或多机 `cs_<机名>`）并行的影子状态变量
+- 默认时钟不是 `sys_clk`、默认复位不是 `sys_rst_n`，或时序块写成同步复位 / 高有效
 - 跳转靠 `else` 进业务态；弧上只剩 `*_trig`
-- 端口无 `i_`/`o_`；接口角色与方向前缀乱序
+- 端口无 `i_`/`o_`（`sys_clk` / `sys_rst_n` 除外）；接口角色与方向前缀乱序
 - 例化无功能注释或未标脉冲/握手
 - 手写异步 FIFO；监控口无 keep 被优化
 - 为极罕见功能边角加一串恢复态，却没有 sticky 可观测错误
