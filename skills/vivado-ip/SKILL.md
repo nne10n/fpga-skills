@@ -1,6 +1,6 @@
 ---
 name: vivado-ip
-description: 'Vivado IP 核（IP Catalog 官方 IP、XPM 宏、自定义 IP 打包）的完整工作流：create_ip 建核、set_property CONFIG.* 配参数、generate_target 生成产物、OOC 综合与 synth_ip、.xci 复用与 report_ip_status / upgrade_ip 升级、IP repo 注册与 update_ip_catalog、.veo/.vho 例化模板抄写、component.xml / VLNV 结构解读、ipx:: 打包与完整性校验（IP Packager），以及 IP 报错排查。凡涉及 IP core / IP 核、IP 打包或封装、IP 例化、IP 升级、IP repo、IP Catalog、XPM / XPM_LIBRARIES、跨时钟域打拍、异步 FIFO、片上 RAM/BRAM 原语、时钟向导、xpm_cdc_* / xpm_fifo_* / xpm_memory_*、clk_wiz / fifo_generator / blk_mem_gen / AXI 外设等话题都应加载本 skill —— 即使用户没有明说"IP 核"三个字。以 Vivado 2022.2 实测为准；在本仓库执行 vivado 命令须经 009_scripts/remote_eda.sh（见 AGENTS.md）。'
+description: Vivado IP 核创建（打包自定义 IP）与例化使用（IP Catalog 官方 IP、XPM 宏）的完整工作流。凡涉及 Vivado IP 核、create_ip、set_property CONFIG、generate_target、.xci、ipx:: 打包、IP Packager、IP Catalog、IP repo、.veo/.vho 例化模板、XPM CDC/FIFO/Memory、clk_wiz/fifo_generator/blk_mem_gen/axi 外设等场景都应加载本 skill —— 即使用户没有明说"IP 核"三个字。
 ---
 
 # Vivado IP 核创建与例化使用
